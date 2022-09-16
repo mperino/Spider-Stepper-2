@@ -53,20 +53,31 @@ if stepper4 == True:
 #Define steps per rotation
 stepsperrot = 2048
 
-#Define forward and backwards RPM (max is less than 20)
+#Define forward and backwards RPM (max is less than abs(20)) Use negative RPM to move the stepper backwards,
+# Do not use negative steps to move things backwards.
 forwardRPM=8
-backwardsRPM=10
+backwardsRPM= -10
 #Define how many steps. or use rotations (stepsperrot * #) to lower/raise at start and end
 lowersteps = stepsperrot * 1
 #define how many steps to cycle up and down after initial lower the "twitching"
-twitchsteps = 30
+twitchsteps = 90
+twitches = 4
 
 #define how long to pause at end before re-starting
 sleeptime = 5
+#define how many steps per stepper when cycling through all steppers. Gives the illusion of all steppers moving at once.
+# reccomend a multiple of 4 between 4 and 512.
+cyclesteps = 4
+
+# Other notes
+# it is not usually neccisary to apply a holding power to these weak steppers. They generally have enough friction to
+# hold without any applied power.  So the function stopall() is applied to moveallatrpm(steps, rpm).
+# You should not need to edit anything bellow this point for most use cases, but hopefully the code is clear enough to
+# be easily grok'd...
 
 #===============================================================================================
 # Functions to translate steps into co-ordinated rotation.
-# This is pure bit-banging with time sleeping to get RPM's
+# This is pure bit-banging with time sleeping to get RPM's (which will be inaccurate and always a little slower)
 # ==============================================================================================
 
 def statefromsteppin(pin, step):
@@ -85,14 +96,16 @@ def statefromsteppin(pin, step):
         return False
 
 def rotatestepsatrpm(steppernum, steps, rpm):
+    if rpm < 0:
+        steps = steps * -1
     if steps >= 1:
         for i in range(1, steps + 1):
             firepins(steppernum,i)
-            time.sleep(60 / (rpm * stepsperrot))
+            time.sleep(60 / (abs(rpm) * stepsperrot))
     if steps <= 1:
         for i in range(-1, steps - 1, -1):
             firepins(steppernum, i)
-            time.sleep(60 / (rpm * stepsperrot))
+            time.sleep(60 / (abs(rpm) * stepsperrot))
 
 def firepins(steppernum, nextstep):
 #    print("Step:{}".format(nextstep))
@@ -142,11 +155,35 @@ def stopstepper(steppernum):
         pin44.value = statefromsteppin(4, False)
     else:
         print("no valid stepper number or stepper is not enabled.")
+def moveallatrpm(steps, rpm):
+    remainingsteps = steps
+    while remainingsteps > 0:
+        dosteps = min(cyclesteps, remainingsteps)
+        if stepper1 == True:
+            rotatestepsatrpm(1, dosteps, rpm)
+        if stepper2 == True:
+            rotatestepsatrpm(2, dosteps, rpm)
+        if stepper3 == True:
+            rotatestepsatrpm(3, dosteps, rpm)
+        if stepper4 == True:
+            rotatestepsatrpm(4, dosteps, rpm)
+        remainingsteps = remainingsteps - cyclesteps
+    stopall()
 
-# Lower each spider one at a time
-for i in range(1,5):
-    print(i)
-    rotatestepsatrpm(i, lowersteps, forwardRPM)
-    stopstepper(i)
+def stopall():
+    for i in range(1,5):
+        stopstepper(i)
 
+#===================MAIN===============================
+while True:
+    #lower, twitch, raise all spiders
+    print("lowering all")
+    moveallatrpm(lowersteps,forwardRPM)
+    print("Twitching")
+    for i in range(1,twitches +1):
+        moveallatrpm(twitchsteps, forwardRPM)
+        moveallatrpm(twitchsteps, backwardsRPM)
+    print("Raise All")
+    moveallatrpm(lowersteps, backwardsRPM)
+    print("Sleep")
 
